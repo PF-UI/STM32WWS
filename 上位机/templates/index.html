@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>温湿度监控系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.staticfile.net/Chart.js/3.9.1/chart.js"></script>
+
+    <!-- 配置Tailwind自定义颜色和字体 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#10B981',
+                        accent: '#8B5CF6',
+                        danger: '#EF4444',
+                        warning: '#F59E0B',
+                        info: '#06B6D4',
+                        dark: '#1F2937',
+                        light: '#F3F4F6'
+                    },
+                    fontFamily: {
+                        inter: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+
+            .card-shadow {
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            }
+
+            .chart-container {
+                transition: all 0.3s ease;
+            }
+
+            .chart-container:hover {
+                transform: translateY(-5px);
+            }
+
+            .data-value {
+                @apply text-3xl md:text-4xl font-bold transition-all duration-300;
+            }
+
+            .data-label {
+                @apply text-gray-500 font-medium;
+            }
+
+            .status-dot {
+                @apply inline-block w-3 h-3 rounded-full mr-2;
+            }
+
+            .animate-pulse-slow {
+                animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+            }
+        }
+    </style>
+</head>
+
+<body class="font-inter bg-gray-50 text-dark min-h-screen">
+    <!-- 顶部导航栏 -->
+    <header class="bg-white shadow-md sticky top-0 z-50">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fa fa-thermometer-half text-primary text-2xl"></i>
+                <h1 class="text-xl md:text-2xl font-bold text-dark">温湿度监控系统</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center">
+                    <span class="status-dot bg-green-500" id="connection-status"></span>
+                    <span class="text-sm" id="connection-text">已连接</span>
+                </div>
+                <button id="refresh-data" class="bg-primary hover:bg-primary/90 text-white px-3 py-1.5 rounded-md transition-colors duration-200 flex items-center">
+                    <i class="fa fa-refresh mr-1"></i> 刷新数据
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 py-6">
+        <!-- 阈值显示区域 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <!-- 温度阈值卡片 -->
+            <div class="bg-white rounded-xl p-6 card-shadow hover:shadow-lg transition-shadow duration-300" id="temp-threshold-card">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <p class="data-label">温度阈值</p>
+                        <p class="data-value text-primary" id="temp-threshold-value">-- °C</p>
+                    </div>
+                    <div class="bg-blue-100 p-3 rounded-full">
+                        <i class="fa fa-thermometer-three-quarters text-primary text-2xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 湿度阈值卡片 -->
+            <div class="bg-white rounded-xl p-6 card-shadow hover:shadow-lg transition-shadow duration-300" id="humi-threshold-card">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <p class="data-label">湿度阈值</p>
+                        <p class="data-value text-secondary" id="humi-threshold-value">-- %</p>
+                    </div>
+                    <div class="bg-green-100 p-3 rounded-full">
+                        <i class="fa fa-tint text-secondary text-2xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 数据概览卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <!-- 温度卡片 -->
+            <div class="bg-white rounded-xl p-6 card-shadow hover:shadow-lg transition-shadow duration-300">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <p class="data-label">当前温度</p>
+                        <p class="data-value text-primary" id="current-temp">-- °C</p>
+                    </div>
+                    <div class="bg-blue-100 p-3 rounded-full">
+                        <i class="fa fa-thermometer-three-quarters text-primary text-2xl"></i>
+                    </div>
+                </div>
+                <div class="flex items-center text-sm text-gray-500">
+                    <i class="fa fa-clock-o mr-1"></i>
+                    <span id="temp-update-time">等待数据...</span>
+                </div>
+            </div>
+
+            <!-- 湿度卡片 -->
+            <div class="bg-white rounded-xl p-6 card-shadow hover:shadow-lg transition-shadow duration-300">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <p class="data-label">当前湿度</p>
+                        <p class="data-value text-secondary" id="current-humidity">-- %</p>
+                    </div>
+                    <div class="bg-green-100 p-3 rounded-full">
+                        <i class="fa fa-tint text-secondary text-2xl"></i>
+                    </div>
+                </div>
+                <div class="flex items-center text-sm text-gray-500">
+                    <i class="fa fa-clock-o mr-1"></i>
+                    <span id="humidity-update-time">等待数据...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 合并的温湿度图表 -->
+        <div class="bg-white rounded-xl p-6 card-shadow chart-container mb-8">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-lg font-semibold text-dark">温湿度变化趋势</h2>
+            </div>
+            <div class="h-[400px]">
+                <canvas id="combined-chart"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-dark text-white py-6 mt-12">
+        <div class="container mx-auto px-4">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="mb-4 md:mb-0">
+                    <p class="text-sm text-gray-400">&copy; 2025 温湿度监控系统. 保留所有权利.</p>
+                </div>
+                <div class="flex space-x-4">
+                    <a href="#" class="text-gray-400 hover:text-white transition-colors duration-200">
+                        <i class="fa fa-question-circle"></i> 帮助
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-white transition-colors duration-200">
+                        <i class="fa fa-cog"></i> 设置
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-white transition-colors duration-200">
+                        <i class="fa fa-info-circle"></i> 关于
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 新增按钮区域 -->
+    <div class="container mx-auto px-4 py-6 flex justify-center space-x-4">
+        <button id="device-switch" class="bg-primary hover:bg-primary/90 text-white px-3 py-1.5 rounded-md transition-colors duration-200">
+            设备开关
+        </button>
+        <button id="temp-alert-switch" class="bg-secondary hover:bg-secondary/90 text-white px-3 py-1.5 rounded-md transition-colors duration-200">
+            温度报警开关
+        </button>
+        <button id="humi-alert-switch" class="bg-accent hover:bg-accent/90 text-white px-3 py-1.5 rounded-md transition-colors duration-200">
+            湿度报警开关
+        </button>
+        <button id="temp-threshold-set" class="bg-warning hover:bg-warning/90 text-white px-3 py-1.5 rounded-md transition-colors duration-200">
+            温度阈值设置
+        </button>
+        <button id="humi-threshold-set" class="bg-danger hover:bg-danger/90 text-white px-3 py-1.5 rounded-md transition-colors duration-200">
+            湿度阈值设置
+        </button>
+    </div>
+
+    <script>
+        // 全局数据存储
+        const dataStore = {
+            temperature: [],
+            humidity: [],
+            timestamps: [],
+            maxDataPoints: 10 // 只保留最新的10个数据点
+        };
+
+        // SocketIO连接
+        let socket;
+        const connectToSocket = () => {
+            if (socket) {
+                socket.disconnect();
+            }
+            // 连接到后端SocketIO服务
+            socket = io('http://' + window.location.host, {
+                transports: ['websocket']
+            });
+
+            socket.on('connect', () => {
+                console.log('SocketIO连接成功');
+                document.getElementById('connection-status').className = 'status-dot bg-green-500';
+                document.getElementById('connection-text').textContent = '已连接';
+
+                // 连接后请求历史数据
+                socket.emit('request_history');
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('SocketIO连接错误:', error);
+                document.getElementById('connection-status').className = 'status-dot bg-red-500';
+                document.getElementById('connection-text').textContent = '连接错误';
+            });
+
+            socket.on('disconnect', () => {
+                console.log('SocketIO连接断开');
+                document.getElementById('connection-status').className = 'status-dot bg-yellow-500 animate-pulse-slow';
+                document.getElementById('connection-text').textContent = '重连中...';
+
+                // 尝试重新连接
+                setTimeout(connectToSocket, 3000);
+            });
+
+            // 接收数据更新事件
+            socket.on('data_update', (data) => {
+                console.log('接收到数据更新:', data);
+                processDataUpdate(data);
+            });
+
+            // 接收命令状态事件
+            socket.on('command_status', (status) => {
+                console.log('命令状态:', status);
+                showNotification(`命令 ${status.command} 执行 ${status.success ? '成功' : '失败'}`,
+                    status.success ? 'success' : 'error');
+            });
+        };
+
+        // 新增：存储温湿度阈值
+        let tempThreshold = null;
+        let humiThreshold = null;
+
+        // 处理数据更新
+        const processDataUpdate = (data) => {
+            // 格式化时间
+            const timestamp = new Date(data.timestamp);
+            const formattedTime = timestamp.toLocaleString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+
+            // 更新当前数据显示
+            document.getElementById('current-temp').textContent = `${data.temperature} °C`;
+            document.getElementById('current-humidity').textContent = `${data.humidity} %`;
+            document.getElementById('temp-update-time').textContent = `更新于 ${formattedTime}`;
+            document.getElementById('humidity-update-time').textContent = `更新于 ${formattedTime}`;
+
+            // 检查温度是否正常
+            const tempElement = document.getElementById('current-temp');
+            if (data.temperature < 18) {
+                tempElement.className = 'data-value text-blue-600';
+            } else if (data.temperature > 30) {
+                tempElement.className = 'data-value text-red-600';
+            } else {
+                tempElement.className = 'data-value text-primary';
+            }
+
+            // 检查湿度是否正常
+            const humidityElement = document.getElementById('current-humidity');
+            if (data.humidity < 30) {
+                humidityElement.className = 'data-value text-blue-600';
+            } else if (data.humidity > 80) {
+                humidityElement.className = 'data-value text-red-600';
+            } else {
+                humidityElement.className = 'data-value text-secondary';
+            }
+
+            // 新增：检查当前温湿度是否超过阈值
+            if (tempThreshold!== null) {
+                const tempThresholdCard = document.getElementById('temp-threshold-card');
+                if (data.temperature >= parseFloat(tempThreshold)) {
+                    tempThresholdCard.classList.add('bg-red-400');
+                    playAlertSound(); // 触发声音报警
+                } else {
+                    tempThresholdCard.classList.remove('bg-red-400');
+                }
+            }
+
+            if (humiThreshold!== null) {
+                const humiThresholdCard = document.getElementById('humi-threshold-card');
+                if (data.humidity >= parseInt(humiThreshold)) {
+                    humiThresholdCard.classList.add('bg-red-400');
+                    playAlertSound(); // 触发声音报警
+                } else {
+                    humiThresholdCard.classList.remove('bg-red-400');
+                }
+            }
+            function playAlertSound() {
+                // 音频元素单例模式（仅首次调用时创建）
+                if (!window.alertSound) {
+                    // Base64 编码的 WAV 音频数据（实际内容被简化）
+                    window.alertSound = new Audio("{{ url_for('static', filename='static/audio/baojin.mp3') }}");
+                  }
+                // 重置音频并播放（支持重复调用）
+                window.alertSound.currentTime = 0;
+                window.alertSound.play()
+                    .catch(error => {
+                        console.error('提示音播放失败:', error);
+                    });
+            }
+            // 添加到图表数据
+            addDataToChart(data.temperature, data.humidity, timestamp);
+        };
+
+        // 添加数据到图表
+        const addDataToChart = (temperature, humidity, timestamp) => {
+            // 确保数据点数量不超过最大值
+            if (dataStore.timestamps.length >= dataStore.maxDataPoints) {
+                dataStore.timestamps.shift();
+                dataStore.temperature.shift();
+                dataStore.humidity.shift();
+            }
+
+            // 添加新数据点
+            dataStore.timestamps.push(timestamp);
+            dataStore.temperature.push(temperature);
+            dataStore.humidity.push(humidity);
+
+            // 更新图表
+            combinedChart.data.datasets[0].data = dataStore.temperature;
+            combinedChart.data.datasets[1].data = dataStore.humidity;
+            combinedChart.data.labels = dataStore.timestamps.map(t => formatTimeForChart(t));
+            combinedChart.update();
+        };
+
+        // 格式化时间用于图表显示
+        const formatTimeForChart = (date) => {
+            return date.getHours() + ':' + (date.getMinutes() < 10 ? '0' : '') + date.getMinutes();
+        };
+
+        // 显示通知
+        const showNotification = (message, type = 'info') => {
+            // 创建通知元素
+            const notification = document.createElement('div');
+            notification.className = `fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg z-50 transition-all duration-300 transform translate-y-0 opacity-100`;
+
+            // 根据类型设置样式
+            if (type === 'success') {
+                notification.className += ' bg-green-500 text-white';
+            } else if (type === 'error') {
+                notification.className += ' bg-red-500 text-white';
+            } else if (type === 'warning') {
+                notification.className += ' bg-yellow-500 text-white';
+            } else {
+                notification.className += ' bg-blue-500 text-white';
+            }
+
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            // 3秒后隐藏通知
+            setTimeout(() => {
+                notification.classList.add('translate-y-10', 'opacity-0');
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        };
+
+        // 初始化合并图表
+        let combinedChart;
+        const initCombinedChart = () => {
+            const ctx = document.getElementById('combined-chart').getContext('2d');
+            combinedChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: '温度 (°C)',
+                            data: [],
+                            borderColor: '#3B82F6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        },
+                        {
+                            label: '湿度 (%)',
+                            data: [],
+                            borderColor: '#10B981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                maxRotation: 0,
+                                callback: function (value, index, values) {
+                                    return dataStore.timestamps[value]?.getMinutes() + '分';
+                                }
+                            }
+                        },
+                        y: {
+                            beginAtZero: false,
+                            min: 15,
+                            max: 35,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            },
+                            title: {
+                                display: true,
+                                text: '温度 (°C)'
+                            }
+                        },
+                        y1: {
+                            beginAtZero: false,
+                            min: 20,
+                            max: 90,
+                            grid: {
+                                drawOnChartArea: false
+                            },
+                            title: {
+                                display: true,
+                                text: '湿度 (%)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                boxWidth: 6
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function (context) {
+                                    const label = context.dataset.label || '';
+                                    const value = context.parsed.y;
+                                    return `${label}: ${value} ${label.includes('温度') ? '°C' : '%'}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        };
+
+        // 设备开关状态
+        let deviceOn = false;
+        // 温度报警开关状态
+        let tempAlertOn = false;
+        // 湿度报警开关状态
+        let humiAlertOn = false;
+
+        // 设备开关点击事件处理函数
+        document.getElementById('device-switch').addEventListener('click', () => {
+            deviceOn = !deviceOn;
+            if (deviceOn) {
+                socket.emit('send_command', { command: 'device_on' });
+            } else {
+                socket.emit('send_command', { command: 'device_off' });
+            }
+        });
+
+        // 温度报警开关点击事件处理函数
+        document.getElementById('temp-alert-switch').addEventListener('click', () => {
+            tempAlertOn = !tempAlertOn;
+            if (tempAlertOn) {
+                socket.emit('send_command', { command: 'alert_on', alert_id: 1 });
+            } else {
+                socket.emit('send_command', { command: 'alert_off', alert_id: 1 });
+            }
+        });
+
+        // 湿度报警开关点击事件处理函数
+        document.getElementById('humi-alert-switch').addEventListener('click', () => {
+            humiAlertOn = !humiAlertOn;
+            if (humiAlertOn) {
+                socket.emit('send_command', { command: 'alert_on', alert_id: 2 });
+            } else {
+                socket.emit('send_command', { command: 'alert_off', alert_id: 2 });
+            }
+        });
+
+        // 温度阈值设置点击事件处理函数
+        document.getElementById('temp-threshold-set').addEventListener('click', () => {
+            const value = prompt('请输入温度阈值（格式：±XX.X）');
+            if (value) {
+                tempThreshold = value;
+                document.getElementById('temp-threshold-value').textContent = `${value} °C`;
+                socket.emit('send_command', { command: 'temp_threshold', value: value });
+            }
+        });
+
+        // 湿度阈值设置点击事件处理函数
+        document.getElementById('humi-threshold-set').addEventListener('click', () => {
+            const value = prompt('请输入湿度阈值（0-100的整数）');
+            if (value) {
+                humiThreshold = value;
+                document.getElementById('humi-threshold-value').textContent = `${value} %`;
+                socket.emit('send_command', { command: 'humi_threshold', value: value });
+            }
+        });
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            // 初始化图表
+            initCombinedChart();
+
+            // 连接到SocketIO
+            connectToSocket();
+
+            // 刷新数据按钮
+            document.getElementById('refresh-data').addEventListener('click', () => {
+                showNotification('正在刷新数据...', 'info');
+                socket.emit('request_refresh');
+            });
+        });
+    </script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</body>
+
+</html>
